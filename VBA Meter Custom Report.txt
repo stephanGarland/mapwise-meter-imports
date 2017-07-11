@@ -413,7 +413,7 @@ Range("Q5").Value = "PF"
 question = MsgBox("Do you want to include a sheet with conductor ampacity for accurate loading?", vbYesNo + vbQuestion, "ACSR Worksheet")
 If question = vbYes Then
     Range("Q6").Value = "Pri. Cond."
-    ' Drop-down list validation for R6 is performed in FixFormat()
+    ' Drop-down list validation for Q6 is performed in FixFormat()
     acsrValues = True
 Else
     acsrValues = False
