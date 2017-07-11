@@ -1,4 +1,9 @@
 # mapwise-meter-imports
+
+All three of these macros are intended to be used with NISC Mapwise and MDMS software. It's highly unlikely that it will be applicable to you otherwise, although you can probably use some of the column sorting to clean up nasty CSV files.
+
+It's not the prettiest code. It works.
+
 HOWTO: Import a Mapwise Layer Attribute Export
 
 This describes how to take a CSV file exported from Mapwise containing layer attributes such as gs\_account\_number, gs\_rate\_schedule, etc. and format it into one that makes more sense, using a VBA macro in Excel. The macro will set up the workbook for further analysis with kWh usage from MDMS, and generate a meter list CSV file to use with creating a Virtual Electric Meter (VEM) in MDMS [optional].
