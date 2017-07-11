@@ -1,0 +1,195 @@
+Option Explicit
+
+' Copyright 2017 Stephan Garland
+' stephan.marc.garland@gmail.com
+' Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files
+' (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge,
+' publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so,
+' subject to the following conditions:
+'
+' The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+'
+' THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+' OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+' LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+' IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Sub RunMeFirst()
+
+Cleanup_Mapwise_Import
+
+End Sub
+
+Sub Cleanup_Mapwise_Import()
+
+Dim targetCols As Variant
+Dim replColNames As Variant
+Dim index As Integer
+Dim found As Range
+Dim counter As Integer
+Dim headerIndex As Integer
+Dim question As Integer
+Dim rowCount As Variant
+Dim colNum As Variant
+Dim colLetter As Variant
+Dim C As Range
+Dim cellLen As Integer
+Dim targetSheet As Worksheet
+
+
+' Add or remove fields to be copied here
+
+targetCols = Array("gs_account_number", "gs_meter_number", "gs_amr_identification", _
+                   "gs_amr_phase", "gs_city", "Name", "Phase", _
+                   "gs_rate_schedule", "gs_service_address", _
+                   "gs_service_map_location", "gs_service_number")
+
+' Put the same fields from above in the desired order here, with the desired name
+                    
+replColNames = Array("Acct #", "Meter #", "AMR ID", "AMR Phase", "City", _
+                     "Name", "Phase", "Rate", "Address", "Srv Map Loc", "Srv Num")
+
+counter = 1
+ActiveSheet.Range("A1").Select
+
+' This counts the number of columns in the source array and sets the index to that value
+For index = LBound(targetCols) To UBound(targetCols)
+
+    Set found = Rows("1:1").Find(targetCols(index), LookIn:=xlValues, LookAt:=xlWhole, _
+                                 SearchOrder:=xlByColumns, SearchDirection:=xlNext, MatchCase:=False)
+
+' This is basically an insertion sort, and ends up with the columns in A:K
+
+    If Not found Is Nothing Then
+        If found.Column <> counter Then
+            found.EntireColumn.Cut
+            Columns(counter).Insert shift:=xlToRight
+            Application.CutCopyMode = False
+        End If
+        counter = counter + 1
+    End If
+
+Next index
+
+' There is a more dynamic way of doing this, using index
+' As it is, replace A:K with the range of actual data
+' PROTIP: targetCols is 1-indexed, and has 11 entries -->
+' A:K encompasses that entire array -->
+' Add/subtract 1 for each entry you add/remove
+
+Range("A:K").Cut
+Set targetSheet = Sheets.Add(After:=Sheets(Sheets.Count))
+targetSheet.Name = "Contributors"
+Range("A:K").Insert
+question = MsgBox("Do you want to delete the original sheet?", vbYesNo + vbQuestion, "Delete Sheet")
+If question = vbYes Then
+    Sheets(1).Activate
+    Sheets(1).Delete
+Else
+    End If
+Sheets.Add.Name = "Data"
+Sheets("Contributors").Move After:=Sheets("Data")
+Sheets.Add.Name = "Graph"
+Sheets("Graph").Move After:=Sheets("Contributors")
+Sheets("Data").Activate
+Range("A1").Value = "Date/Time"
+Range("B1").Value = "kW"
+Range("C1").Value = "Amps"
+
+' Yes, counter is 0-indexed here, and 1-indexed previously
+' headerIndex does an absolute count of 0 To # targetCols, whereas index is relative
+' If you change these, there is a non-zero chance that the For will throw an error
+
+counter = 0
+Sheets("Contributors").Activate
+ActiveSheet.Range("A1").Select
+For headerIndex = 0 To (UBound(targetCols) - LBound(targetCols))
+    
+    ActiveCell.Value = replColNames(counter)
+    ' If you don't use a Range, it fits columns based on headers, which isn't large enough
+    ' A1:Z500 is a big enough sample to prevent that
+    ActiveCell.Range("A1:Z500").Columns.AutoFit
+    ActiveCell.Offset(0, 1).Select
+    counter = counter + 1
+    
+Next headerIndex
+
+' Find column number with meters numbers, then assign its corresponding letter value
+colNum = Application.WorksheetFunction.Match("Meter #", Range("A1:ZZ1"), 0)
+colLetter = (Split(Cells(, colNum).Address, "$")(1))
+rowCount = Range(colLetter & Rows.Count).End(xlUp).Row
+
+' This finds the blanks and deletes the entire row
+' NOTE: If there isn't a meter number, you're losing that account
+' Reasoning is that if MDMS can't include it in the VEM, don't dilute the total
+Range(colLetter & "2:" & colLetter & rowCount).Select
+Selection.SpecialCells(xlCellTypeBlanks).Select
+Selection.EntireRow.Delete shift:=xlUp
+
+
+
+' Meter numbers are 9 digits, so if one is shorter, assume a trimmed leading 0 and append it
+For Each C In Range(colLetter & "2:" & colLetter & rowCount)
+    ' If cell type isn't set to text, the 0s will be non-visible
+    ' This isn't an issue for the CSV, but it is confusing to look at
+    ' Note that this does not persist, as CSVs have no way of saving Excel's formatting
+    C.NumberFormat = "@"
+    cellLen = Len(C.Value)
+    If cellLen < 9 And cellLen <> 0 Then
+        C.Value = 0 & C.Value
+    End If
+    ' There shouldn't be any blanks left, but just in case...
+    ' Yes, the cellLen check here is 8, not 9 - trust me
+    If Left(C.Value, 1) = "0" And cellLen < 8 Or cellLen = 0 Then
+        C.EntireRow.Delete shift:=xlUp
+    End If
+Next C
+
+Range("A1").Activate
+Application.CutCopyMode = False
+
+question = MsgBox("Do you want to create a CSV file with meter numbers for use with MDMS?", vbYesNo + vbQuestion, "MDMS File")
+If question = vbYes Then
+    ' Call CopyMeters for use with MDMS
+    Sheets("Contributors").Activate
+    CopyMeters
+Else
+    End If
+
+End Sub
+
+
+
+Sub CopyMeters()
+Dim index As Integer
+Dim fileSaveName As Variant
+Dim rowCount As Variant
+Dim colNum As Variant
+Dim colLetter As Variant
+Dim cellLen As Integer
+Dim newBook As Workbook
+
+
+colNum = Application.WorksheetFunction.Match("Meter #", Range("A1:ZZ1"), 0)
+colLetter = (Split(Cells(, colNum).Address, "$")(1))
+rowCount = Range(colLetter & Rows.Count).End(xlUp).Row
+
+MsgBox ("Filename will automatically be appended with ""Meter List""")
+fileSaveName = Split(ActiveWorkbook.Name, ".")
+fileSaveName = fileSaveName(LBound(fileSaveName)) & " Meter List"
+
+Range(colLetter & "1:" & colLetter & rowCount).EntireColumn.Copy
+Set newBook = Workbooks.Add
+newBook.Worksheets("Sheet1").Range("A1").PasteSpecial (xlPasteAll)
+
+Selection.Replace What:="0", Replacement:="", LookAt:=xlWhole, _
+    SearchOrder:=xlByColumns, MatchCase:=False, SearchFormat:=False, _
+    ReplaceFormat:=False
+    
+Selection.Columns.AutoFit
+newBook.SaveAs Filename:=fileSaveName, FileFormat:=xlCSV, CreateBackup:=False
+
+End Sub
+
+
+

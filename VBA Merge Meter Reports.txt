@@ -1,0 +1,880 @@
+Option Explicit
+
+' *********************************************************************************************************************************
+
+' ALL BASE64 ENCODING/DECODING IS LICENSED UNDER THE TERMS OF THE MIT LICENSE, AS PROVIDED BY CHRISTIAN D'HEUREUSE
+' ALL OTHER CODE IS ALSO LICENSED UNDER THE TERMS OF THE MIT LICENSE, AS PROVIDED BY STEPHAN GARLAND
+
+' *********************************************************************************************************************************
+
+
+' Copyright 2017 Stephan Garland
+' stephan.marc.garland@gmail.com
+' Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files
+' (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge,
+' publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so,
+' subject to the following conditions:
+'
+' The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+'
+' THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+' OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+' LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+' IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+' *********************************************************************************************************************************
+
+' A Base64 Encoder/Decoder.
+'
+' This module is used to encode and decode data in Base64 format as described in RFC 1521.
+'
+' Home page: www.source-code.biz.
+' Copyright 2007: Christian d'Heureuse, Inventec Informatik AG, Switzerland.
+'
+' This module is multi-licensed and may be used under the terms
+' of any of the following licenses:
+'
+'  EPL, Eclipse Public License, V1.0 or later, http://www.eclipse.org/legal
+'  LGPL, GNU Lesser General Public License, V2.1 or later, http://www.gnu.org/licenses/lgpl.html
+'  GPL, GNU General Public License, V2 or later, http://www.gnu.org/licenses/gpl.html
+'  AGPL, GNU Affero General Public License V3 or later, http://www.gnu.org/licenses/agpl.html
+'  AL, Apache License, V2.0 or later, http://www.apache.org/licenses
+'  BSD, BSD License, http://www.opensource.org/licenses/bsd-license.php
+'  MIT, MIT License, http://www.opensource.org/licenses/MIT
+'
+' Please contact the author if you need another license.
+' This module is provided "as is", without warranties of any kind.
+
+
+Private InitDone       As Boolean
+Private Map1(0 To 63)  As Byte
+Private Map2(0 To 127) As Byte
+Private acsrValues     As Boolean
+
+' This exists solely to avoid difficulties with the above globals being declared after any other subroutines
+
+Sub RunMeFirst()
+
+ImportFromWB
+
+End Sub
+
+' Encodes a string into Base64 format.
+' No blanks or line breaks are inserted.
+' Parameters:
+'   S         a String to be encoded.
+' Returns:    a String with the Base64 encoded data.
+Public Function Base64EncodeString(ByVal s As String) As String
+   Base64EncodeString = Base64Encode(ConvertStringToBytes(s))
+   
+   End Function
+
+' Encodes a byte array into Base64 format.
+' No blanks or line breaks are inserted.
+' Parameters:
+'   InData    an array containing the data bytes to be encoded.
+' Returns:    a string with the Base64 encoded data.
+Public Function Base64Encode(InData() As Byte)
+   Base64Encode = Base64Encode2(InData, UBound(InData) - LBound(InData) + 1)
+   
+   End Function
+
+' Encodes a byte array into Base64 format.
+' No blanks or line breaks are inserted.
+' Parameters:
+'   InData    an array containing the data bytes to be encoded.
+'   InLen     number of bytes to process in InData.
+' Returns:    a string with the Base64 encoded data.
+
+Public Function Base64Encode2(InData() As Byte, ByVal InLen As Long) As String
+   If Not InitDone Then Init
+   If InLen = 0 Then Base64Encode2 = "": Exit Function
+   Dim ODataLen As Long: ODataLen = (InLen * 4 + 2) \ 3     ' output length without padding
+   Dim OLen As Long: OLen = ((InLen + 2) \ 3) * 4           ' output length including padding
+   Dim Out() As Byte
+   ReDim Out(0 To OLen - 1) As Byte
+   Dim ip0 As Long: ip0 = LBound(InData)
+   Dim ip As Long
+   Dim op As Long
+   Do While ip < InLen
+      Dim i0 As Byte: i0 = InData(ip0 + ip): ip = ip + 1
+      Dim i1 As Byte: If ip < InLen Then i1 = InData(ip0 + ip): ip = ip + 1 Else i1 = 0
+      Dim i2 As Byte: If ip < InLen Then i2 = InData(ip0 + ip): ip = ip + 1 Else i2 = 0
+      Dim o0 As Byte: o0 = i0 \ 4
+      Dim o1 As Byte: o1 = ((i0 And 3) * &H10) Or (i1 \ &H10)
+      Dim o2 As Byte: o2 = ((i1 And &HF) * 4) Or (i2 \ &H40)
+      Dim o3 As Byte: o3 = i2 And &H3F
+      Out(op) = Map1(o0): op = op + 1
+      Out(op) = Map1(o1): op = op + 1
+      Out(op) = IIf(op < ODataLen, Map1(o2), Asc("=")): op = op + 1
+      Out(op) = IIf(op < ODataLen, Map1(o3), Asc("=")): op = op + 1
+      Loop
+   Base64Encode2 = ConvertBytesToString(Out)
+   
+   End Function
+
+' Decodes a string from Base64 format.
+' Parameters:
+'    s        a Base64 String to be decoded.
+' Returns     a String containing the decoded data.
+
+Public Function Base64DecodeString(ByVal s As String) As String
+   If s = "" Then Base64DecodeString = "": Exit Function
+   Base64DecodeString = ConvertBytesToString(Base64Decode(s))
+   
+   End Function
+   
+
+' Decodes a byte array from Base64 format.
+' Parameters
+'   s         a Base64 String to be decoded.
+' Returns:    an array containing the decoded data bytes.
+
+Public Function Base64Decode(ByVal s As String) As Byte()
+   If Not InitDone Then Init
+   Dim IBuf() As Byte: IBuf = ConvertStringToBytes(s)
+   Dim ILen As Long: ILen = UBound(IBuf) + 1
+   If ILen Mod 4 <> 0 Then Err.Raise vbObjectError, , "Length of Base64 encoded input string is not a multiple of 4."
+   Do While ILen > 0
+      If IBuf(ILen - 1) <> Asc("=") Then Exit Do
+      ILen = ILen - 1
+      Loop
+   Dim OLen As Long: OLen = (ILen * 3) \ 4
+   Dim Out() As Byte
+   ReDim Out(0 To OLen - 1) As Byte
+   Dim ip As Long
+   Dim op As Long
+   Do While ip < ILen
+      Dim i0 As Byte: i0 = IBuf(ip): ip = ip + 1
+      Dim i1 As Byte: i1 = IBuf(ip): ip = ip + 1
+      Dim i2 As Byte: If ip < ILen Then i2 = IBuf(ip): ip = ip + 1 Else i2 = Asc("A")
+      Dim i3 As Byte: If ip < ILen Then i3 = IBuf(ip): ip = ip + 1 Else i3 = Asc("A")
+      If i0 > 127 Or i1 > 127 Or i2 > 127 Or i3 > 127 Then _
+         Err.Raise vbObjectError, , "Illegal character in Base64 encoded data."
+      Dim b0 As Byte: b0 = Map2(i0)
+      Dim b1 As Byte: b1 = Map2(i1)
+      Dim b2 As Byte: b2 = Map2(i2)
+      Dim b3 As Byte: b3 = Map2(i3)
+      If b0 > 63 Or b1 > 63 Or b2 > 63 Or b3 > 63 Then _
+         Err.Raise vbObjectError, , "Illegal character in Base64 encoded data."
+      Dim o0 As Byte: o0 = (b0 * 4) Or (b1 \ &H10)
+      Dim o1 As Byte: o1 = ((b1 And &HF) * &H10) Or (b2 \ 4)
+      Dim o2 As Byte: o2 = ((b2 And 3) * &H40) Or b3
+      Out(op) = o0: op = op + 1
+      If op < OLen Then Out(op) = o1: op = op + 1
+      If op < OLen Then Out(op) = o2: op = op + 1
+      Loop
+   Base64Decode = Out
+   
+End Function
+
+Private Sub Init()
+
+   Dim c As Integer, i As Integer
+   ' set Map1
+   i = 0
+   For c = Asc("A") To Asc("Z"): Map1(i) = c: i = i + 1: Next
+   For c = Asc("a") To Asc("z"): Map1(i) = c: i = i + 1: Next
+   For c = Asc("0") To Asc("9"): Map1(i) = c: i = i + 1: Next
+   Map1(i) = Asc("+"): i = i + 1
+   Map1(i) = Asc("/"): i = i + 1
+   ' set Map2
+   For i = 0 To 127: Map2(i) = 255: Next
+   For i = 0 To 63: Map2(Map1(i)) = i: Next
+   InitDone = True
+   
+End Sub
+
+Private Function ConvertStringToBytes(ByVal s As String) As Byte()
+   Dim b1() As Byte: b1 = s
+   Dim l As Long: l = (UBound(b1) + 1) \ 2
+   If l = 0 Then ConvertStringToBytes = b1: Exit Function
+   Dim b2() As Byte
+   ReDim b2(0 To l - 1) As Byte
+   Dim p As Long
+   For p = 0 To l - 1
+      Dim c As Long: c = b1(2 * p) + 256 * CLng(b1(2 * p + 1))
+      If c >= 256 Then c = Asc("?")
+      b2(p) = c
+      Next
+   ConvertStringToBytes = b2
+   
+   End Function
+
+Private Function ConvertBytesToString(b() As Byte) As String
+   Dim l As Long: l = UBound(b) - LBound(b) + 1
+   Dim b2() As Byte
+   ReDim b2(0 To (2 * l) - 1) As Byte
+   Dim p0 As Long: p0 = LBound(b)
+   Dim p As Long
+   For p = 0 To l - 1: b2(2 * p) = b(p0 + p): Next
+   Dim s As String: s = b2
+   ConvertBytesToString = s
+   
+   End Function
+
+
+Sub ACSR_Base64()
+
+' This is a partial spreadsheet of Southwire's ACSR characteristics, as available on their website
+' http://www.southwire.com/ProductCatalog/XTEInterfaceServlet?contentKey=prodcatsheet16
+' It contains only the code word, size, stranding, and ampacity
+' It has been encoded into Base64 as a CSV to quickly reproduce it for use by other worksheets
+' If you are hesitant to trust it, you can copy and paste the text into a Base64Decoder (no spaces)
+' such as https://www.base64decode.org and check that the resultant CSV is free of malware
+
+Dim base64CSV As String
+
+base64CSV = base64CSV & "Q29kZSBXb3JkLFNpemUgKEFXRyBvciBrY21pbCksU3RyYW5kaW5nIChBbC9TdGwpLEFtcGFjaXR5DQosLCwNCiwsLA0KVHVya2V5LDYsNi8xLDEwNSwNClN3YW4sNCw2LzEsMTQwL"
+base64CSV = base64CSV & "A0KU3dhbmF0ZSw0LDcvMSwxNDAsDQpTcGFycm93LDIsNi8xLDE4NCwNClNwYXJhdGUsMiw3LzEsMTg0LA0KUm9iaW4sMSw2LzEsMjEyLA0KUmF2ZW4sMS8wLDYvMSwyNDIsDQpRdW"
+base64CSV = base64CSV & "FpbCwyLzAsNi8xLDI3NiwNClBpZ2VvbiwzLzAsNi8xLDMxNSwNClBlbmd1aW4sNC8wLDYvMSwzNTcsDQpXYXh3aW5nLDI2Ni44LDE4LzEsNDQ5LA0KUGFydHJpZGdlLDI2Ni44LDI"
+base64CSV = base64CSV & "2LzcsNDc1LA0KT3N0cmljaCwzMDAsMjYvNyw0OTIsDQpNZXJsaW4sMzM2LjQsMTgvMSw1MTksDQpMaW5uZXQsMzM2LjQsMjYvNyw1MjksDQpPcmlvbGUsMzM2LjQsMzAvNyw1MzUs"
+base64CSV = base64CSV & "DQpDaGlja2FkZWUsMzk3LjUsMTgvMSw1NzYsDQpCcmFudCwzOTcuNSwyNC83LDU4NCwNCkliaXMsMzk3LjUsMjYvNyw1ODcsDQpMYXJrLDM5Ny41LDMwLzcsNTk0LA0KUGVsaWNhb"
+base64CSV = base64CSV & "iw0NzcsMTgvMSw2NDYsDQpGbGlja2VyLDQ3NywyNC83LDY1NSwNCkhhd2ssNDc3LDI2LzcsNjU5LA0KSGVuLDQ3NywzMC83LDY2NiwNCk9zcHJleSw1NTYuNSwxOC8xLDcxMSwNCl"
+base64CSV = base64CSV & "BhcmFrZWV0LDU1Ni41LDI0LzcsNzIxLA0KRG92ZSw1NTYuNSwyNi83LDcyNiwNCkVhZ2xlLDU1Ni41LDMwLzcsNzM0LA0KUGVhY29jayw2MDUsMjQvNyw3NjAsDQpTcXVhYiw2MDU"
+base64CSV = base64CSV & "sMjYvNyw3NjUsDQpXb29kIER1Y2ssNjA1LjAsMzAvNyw3NzQsDQpUZWFsLDYwNS4wLDMwLzE5LDc3MywNCktpbmdiaXJkLDYzNiwxOC8xLDc3MywNClN3aWZ0LDYzNi4wLDM2LzEs"
+base64CSV = base64CSV & "NzY5LA0KUm9vayw2MzYsMjQvNyw3ODQsDQpHcm9zYmVhayw2MzYsMjYvNyw3ODksDQpTY290ZXIsNjM2LjAsMzAvNyw3OTgsDQpFZ3JldCw2MzYsMzAvMTksNzk4LA0KRmxhbWluZ"
+base64CSV = base64CSV & "28sNjY2LjYsMjQvNyw4MDcsDQpHYW5uZXQsNjY2LjYsMjYvNyw4MTIsDQpTdGlsdCw3MTUuNSwyNC83LDg0NCwNClN0YXJsaW5nLDcxNS41LDI2LzcsODQ5LA0KUmVkd2luZyw3MT"
+base64CSV = base64CSV & "UuNSwzMC8xOSw4NTksDQpDb290LDc5NSwzNi8xLDg4NCwNCkRyYWtlLDc5NSwyNi83LDkwNywNClRlcm4sNzk1LDQ1LzcsODg3LA0KQ29uZG9yLDc5NSw1NC83LDg4OSwNCk1hbGx"
+base64CSV = base64CSV & "hcmQsNzk1LDMwLzE5LDkxOCwNClJ1ZGR5LDkwMCw0NS83LDk1OCwNCkNhbmFyeSw5MDAsNTQvNyw5NjEsDQpSYWlsLDk1NCw0NS83LDk5MywNCkNhcmRpbmFsLDk1NCw1NC83LDk5"
+base64CSV = base64CSV & "NiwNCk9ydG9sYW4sMTAzMy41LDQ1LzcsMTA0MywNCkN1cmxldywxMDMzLjUsNTQvNywxMDQ3LA0KQmx1ZWpheSwxMTEzLDQ1LzcsMTA5MiwNCkZpbmNoLDExMTMsNTQvMTksMTA5M"
+base64CSV = base64CSV & "ywNCkJ1bnRpbmcsMTE5Mi41LDQ1LzcsMTEzOSwNCkdyYWNrbGUsMTE5Mi41LDU0LzE5LDExNDAsDQpCaXR0ZXJuLDEyNzIsNDUvNywxMTg0LA0KUGhlYXNhbnQsMTI3Miw1NC8xOS"
+base64CSV = base64CSV & "wxMTg3LA0KRGlwcGVyLDEzNTEuNSw0NS83LDEyMjksDQpNYXJ0aW4sMTM1MS41LDU0LzE5LDEyMzIsDQpCb2JvbGluaywxNDMxLDQ1LzcsMTI3MiwNCkxhcHdpbmcsMTU5MCw0NS8"
+base64CSV = base64CSV & "3LDEzNTQsDQpGYWxjb24sMTU5MCw1NC8xOSwxMzU5LA0KQ2h1a2FyLDE3ODAsODQvMTksMTQ1MywNCkJsdWViaXJkLDIxNTYsODQvMTksMTYyMywNCktpd2ksMjE2Nyw3Mi83LDE2MDc="
+
+Range("A1").Value = Base64DecodeString(base64CSV)
+
+SplitToCols
+TransposeCols
+
+End Sub
+
+' This splits the singular cell containing the entire spreadsheet into cells, split at ","
+
+Sub SplitToCols()
+    Dim src As Range
+    Dim result As Variant
+
+' Sets entire filled range to Text to avoid losing gauges like 1\0
+Range("A2:D273").NumberFormat = "@"
+
+For Each src In Range("A:A").SpecialCells(xlCellTypeConstants)
+    result = Split(src, ",")
+    With Cells(Rows.Count, 2).End(xlUp)
+        Range(.Offset(1, 0), .Offset(1 + UBound(result, 1), 0)) = Application.WorksheetFunction.Transpose(result)
+    End With
+Next src
+Range("A:A").Delete shift:=xlToLeft
+Range("A1").Delete shift:=xlShiftUp
+
+Range("A1:A4").Copy
+Range("B1").PasteSpecial Transpose:=True
+Range("A1:A4").Delete shift:=xlToLeft
+Range("A2:A9").Delete shift:=xlShiftUp
+
+End Sub
+
+' Thanks for /u/_intelligentLife_ on /r/excel for this
+
+Sub TransposeCols()
+
+Dim CSVdata As Variant
+Dim newData As Variant
+Dim rowCount As Integer
+Dim rowPos As Integer
+Dim colPos As Integer
+Dim valCount As Integer
+Dim quadCount As Integer
+
+rowCount = Cells(Rows.Count, "A").End(xlUp).Row
+
+' Text is grouped by 4, this way the count to transpose is dynamic should anything change
+quadCount = rowCount / 4
+CSVdata = Range("A2:A" & rowCount).Value
+
+ReDim newData(1 To quadCount, 1 To (rowCount / quadCount))
+For rowPos = 1 To UBound(newData)
+    For colPos = 1 To UBound(newData, 2)
+        valCount = valCount + 1
+         newData(rowPos, colPos) = Application.WorksheetFunction.Clean(CSVdata(valCount, 1))
+    Next
+Next
+Range("B2").Resize(UBound(newData), UBound(newData, 2)).Value = newData
+Range("A2:A" & rowCount).Delete shift:=xlToLeft
+
+FixFormat
+
+End Sub
+
+Sub FixFormat()
+
+Dim colList As Variant
+Dim i As Variant
+Dim rowCount As Integer
+
+
+' Excel will complain about many things in this spreadsheet
+Application.ErrorCheckingOptions.NumberAsText = False
+Application.ErrorCheckingOptions.TextDate = False
+
+' Add two rows to the top so the headers can have merged cells later
+Rows(2).Insert shift:=xlShiftDown
+Rows(2).Insert shift:=xlShiftDown
+
+colList = Array("A", "B", "C", "D")
+rowCount = Cells(Rows.Count, "A").End(xlUp).Row
+
+' Not all of the numbers survive the transfer; Excel assumes two-digit date-like entries are dates
+Range("B4:C71").NumberFormat = "@"
+
+' Most of them are 6/1, so set them all to that, then fix the two that are 7/1
+' Still faster than a For Each loop
+Range("C4:C13").Value2 = "6/1"
+Range("C6").Value2 = "7/1"
+Range("C8").Value2 = "7/1"
+
+' Merge the headers
+For Each i In colList
+    With Range(i & "1:" & i & "3")
+        .Merge
+        .WrapText = True
+        .VerticalAlignment = xlCenter
+        .HorizontalAlignment = xlCenter
+        .Font.Bold = True
+    End With
+Next i
+
+' Pretty it up because reasons
+With Range("A1:D" & rowCount)
+    .Borders.LineStyle = xlContinuous
+    .RowHeight = 14.4
+End With
+
+Range("A4:A71").HorizontalAlignment = xlLeft
+Range("B4:D71").HorizontalAlignment = xlRight
+
+Columns("A").AutoFit
+
+Range("A1").Activate
+Application.CutCopyMode = False
+
+Sheets("Data").Activate
+
+With Range("K19")
+      .HorizontalAlignment = xlRight
+      .Validation.Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, _
+      Operator:=xlBetween, Formula1:="=ACSR!A4:A71"
+      .Validation.InCellDropdown = True
+      .Validation.ShowInput = True
+      .Value = "Raven"
+End With
+
+End Sub
+
+Sub ImportFromWB()
+
+Dim counter As Integer
+Dim kwVar
+Dim i As Variant
+Dim rowCount As Integer
+Dim sh As Worksheet
+Dim wbTarget As Workbook
+Dim wbSource As String
+Dim wbSource1 As String
+Dim wbSource2 As String
+
+kwVar = Array("kW", "Amps")
+
+Set wbTarget = ActiveWorkbook
+
+MsgBox ("Select your first spreadsheet to import")
+wbSource1 = Application.GetOpenFilename(FileFilter:="Excel Files (*.xlsx), *.xlsx")
+MsgBox ("Select your second spreadsheet to import")
+wbSource2 = Application.GetOpenFilename(FileFilter:="Excel Files (*.xlsx), *.xlsx")
+
+For counter = 0 To 1
+    If counter = 0 Then
+        wbSource = wbSource1
+    Else
+        wbSource = wbSource2
+    End If
+    
+    Workbooks.Open wbSource
+    wbSource = ActiveWorkbook.Name
+    
+    ' A:ZZ should be more than enough for any conceivable imports
+    ' If it's not, maybe consider learning Python + Pandas or something
+    ActiveWorkbook.Sheets(2).Range("A:ZZ").Copy
+    
+    wbTarget.Activate
+    Sheets.Add(After:=Sheets(Sheets.Count)).Name = Split(wbSource, ".")(0) & " Contributors"
+    Range("A1").PasteSpecial xlPasteAll
+    ActiveCell.Range("A1:Z500").Columns.AutoFit
+    
+    ' This just moves the cell selection somewhere non-annoying
+    Range("A1").Select
+    Application.CutCopyMode = False
+    
+    rowCount = Workbooks(wbSource).Sheets("Data").Cells(Rows.Count, "A").End(xlUp).Row
+    Workbooks(wbSource).Sheets("Data").Range("A2:B" & rowCount - 1).Copy
+    
+    wbTarget.Activate
+    Sheets(1).Name = "Data"
+    Sheets("Data").Activate
+    
+    ' First run through pastes into the left side
+    If counter = 0 Then
+        Range("A3").PasteSpecial xlPasteValues
+        With Range("B1:C1")
+            .Merge
+            .Value = Split(wbSource, ".")(0)
+            .HorizontalAlignment = xlCenter
+        End With
+        Range("A:A").NumberFormat = "[$-en-US]m/d/yy h:mm AM/PM;@"
+        Range("C3").Value = "=B3*1000/($K$18*$K$17)"
+        Range("C3").AutoFill Destination:=Range("C3:C" & rowCount)
+        Range("B2:C" & rowCount).NumberFormat = "0.00"
+
+    ' Second run through, once it sees that the first is done, pastes to its right
+    Else
+        Range("D3").PasteSpecial xlPasteValues
+        Range("E3:E" & rowCount).Cut Destination:=Range("D3:D" & rowCount)
+        With Range("D1:E1")
+            .Merge
+            .Value = Split(wbSource, ".")(0)
+            .HorizontalAlignment = xlCenter
+        End With
+        With Range("F1:G1")
+        .Merge
+        .Value = "Combined"
+        .HorizontalAlignment = xlCenter
+        End With
+        
+        Range("E3").Value = "=D3*1000/($K$18*$K$17)"
+        Range("E3").AutoFill Destination:=Range("E3:E" & rowCount)
+        Range("D2:E" & rowCount).NumberFormat = "0.00"
+        
+        Range("A1").Borders(xlDiagonalUp).LineStyle = xlContinuous
+        Range("A2").Value = "Date/Time"
+        Range("B2").Select
+        
+        For i = 0 To 5
+            ' kW NEXT Amps NEXT kW NEXT...
+            ActiveCell.Value = kwVar(i Mod 2)
+            ActiveCell.Offset(0, 1).Select
+        Next i
+        
+        Range("F3").Formula = "=B3 + D3"
+        Range("G3").Formula = "=C3 + E3"
+        Range("F3").AutoFill Destination:=Range("F3:F" & rowCount)
+        Range("G3").AutoFill Destination:=Range("G3:G" & rowCount)
+        Range("F2:G" & rowCount).NumberFormat = "0.00"
+        
+    End If
+
+ActiveWorkbook.Application.CutCopyMode = False
+Workbooks(wbSource).Close SaveChanges:=False
+Next counter
+
+' Calls CreateTables()
+CreateTables
+
+End Sub
+
+Sub CreateTables()
+
+Dim abcVar
+Dim c As Variant
+Dim acsrValues As Boolean
+Dim rowCount As Integer
+Dim contrib1 As Worksheet
+Dim contrib2 As Worksheet
+Dim counter As Integer
+Dim tableCounter As Integer
+Dim colCounter As Integer
+Dim colIndex As Integer
+Dim monthNum As Integer
+Dim question As Integer
+Dim ws As Worksheet
+
+abcVar = Array("A", "B", "C", "AB", "BC", "AC", "ABC")
+
+Set contrib1 = Sheets(2)
+Set contrib2 = Sheets(3)
+
+question = MsgBox("Do you want to include a sheet with conductor ampacity for accurate loading?", vbYesNo + vbQuestion, "ACSR Worksheet")
+If question = vbYes Then
+    Range("J19").Value = "Pri. Cond."
+    ' Drop-down list validation for J19 is performed in FixFormat()
+    acsrValues = True
+Else
+    acsrValues = False
+End If
+
+With Range("I2:M2")
+    .Merge
+    .Value = "Hourly Maximums (Primary kW)"
+    .HorizontalAlignment = xlCenter
+End With
+With Range("O2:S2")
+    .Merge
+    .Value = "Hourly Maximums (Primary Amps)"
+    .HorizontalAlignment = xlCenter
+End With
+
+Range("J17").Value = "Vpri"
+Range("J18").Value = "PF"
+Range("K17").Value = 7200
+Range("K18").Value = 0.9
+
+Range("J21").Value = "Phase"
+Range("K21").Value = "Count"
+Range("L21").Value = "% of Total"
+Range("J" & UBound(abcVar) + 23).Value = "All"
+
+rowCount = Cells(Rows.Count, "A").End(xlUp).Row
+
+' ColorIndex15 is a lovely shade of grey
+If acsrValues = True Then
+    Range("K17:K19").Interior.ColorIndex = 15
+Else
+    Range("K17:K18").Interior.ColorIndex = 15
+End If
+
+' Puts Jan-Dec in two tables, using the current year
+' If you want a specific year for some reason you can replace Year(Date) with "YYYY", e.g. "2015"
+Range("I4").Select
+For tableCounter = 0 To 1
+    monthNum = 1
+    For counter = 0 To 11
+        ActiveCell.Value = (monthNum & "/1/" & Year(Date))
+        ActiveCell.NumberFormat = "mmm"
+        ActiveCell.Offset(1, 0).Activate
+        monthNum = monthNum + 1
+    Next counter
+    ActiveCell.Offset(-12, 6).Activate
+Next tableCounter
+
+' Puts headers in two tables
+Range("J3").Select
+For tableCounter = 0 To 1
+    For c = 0 To 2
+        ActiveCell.Value = abcVar(c)
+        ActiveCell.Offset(0, 1).Activate
+    Next c
+    ActiveCell.Value = "Total"
+    ActiveCell.Offset(0, 3).Activate
+Next tableCounter
+
+' Puts phase headers in count table
+Range("J22").Select
+For c = 0 To UBound(abcVar)
+    ActiveCell.Value = abcVar(c)
+    ActiveCell.Offset(1, 0).Activate
+Next c
+
+
+' Puts count and % of total formulae into table
+colIndex = 22
+Range("K22").Select
+For counter = 0 To UBound(abcVar)
+
+    ' This is .Value instead of .Formula because I could not for the life of me get it to work, R1C1 or A1 style
+    ' I'm terribly sorry for the faux pas, but at least it works
+    ActiveCell.Value = "=COUNTIF(" & "'" & Sheets(2).Name & "'" & "!G:G,$J" & colIndex & ") + COUNTIF(" & "'" & Sheets(3).Name & "'" & "!G:G,$J" & colIndex & ")"
+    ActiveCell.Offset(1, 0).Activate
+    colIndex = colIndex + 1
+Next counter
+
+' *** NOTE *** Pretty much the entire spreadsheet is reliant on K29 being correct
+' If everything is #N/A, look in this block first
+
+' colIndex is indexed higher here so it iterates through the correct cells
+' You want arguments about 0 vs 1-indexing? Try this
+colIndex = 22
+ActiveCell.Value = "=SUM(K22:K" & UBound(abcVar) + 22 & ")"
+Range("L22").Select
+' Total count (L30) is statically set, % of Total is looped --> need UBound(abcVar) + 1 to get it
+For counter = 0 To UBound(abcVar) + 1
+    ActiveCell.Value = "=K" & colIndex & "/$K$29"
+    ActiveCell.NumberFormat = "0.00%"
+    colIndex = colIndex + 1
+    ActiveCell.Offset(1, 0).Activate
+Next counter
+    
+
+' Puts =$Ix*$S$y from (5-16, 9-11) to fill kW into table
+' colCounter indexes A-B-C, counter indexes Jan-Dec
+Range("J4").Select
+colIndex = 22
+For colCounter = 0 To 2
+    For counter = 0 To 11
+        ActiveCell.Value = "=$M" & ActiveCell.Row() & "*$L$" & colIndex
+        ActiveCell.NumberFormat = "0"
+        ActiveCell.Offset(1, 0).Activate
+    Next counter
+    ActiveCell.Offset(-12, 1).Activate
+    colIndex = colIndex + 1
+Next colCounter
+
+' Puts array formula for total into table
+rowCount = ActiveWorkbook.Worksheets("Data").Columns("A").Cells.Find("*", SearchOrder:=xlByRows, LookIn:=xlValues, SearchDirection:=xlPrevious).Row
+For counter = 0 To 11
+    ActiveCell.FormulaArray = "=ROUND(MAX(IF(TEXT($A$3:$A$" & rowCount & ",""mmm"")=TEXT(I" & ActiveCell.Row() & ",""mmm""),$F$3:$F$" & rowCount & ")),0)"
+    ActiveCell.NumberFormat = "0"
+    ActiveCell.Offset(1, 0).Activate
+Next counter
+
+' Puts =$x5*1000/($K$18*$K$19) from (5-16) to fill Amps into table
+' ASCII characters are used with colIndex (74 == J) to allow for easier incrementing
+Range("P4").Select
+colIndex = 74
+For colCounter = 0 To 2
+    For counter = 0 To 11
+        ActiveCell.Value = "=$" & Chr(colIndex) & ActiveCell.Row() & "*1000/($K$17*$K$18)"
+        ActiveCell.NumberFormat = "0"
+        ActiveCell.Offset(1, 0).Activate
+    Next counter
+    ActiveCell.Offset(-12, 1).Activate
+    colIndex = colIndex + 1
+Next colCounter
+
+
+' Puts =SUM(Lx:Ny) from (5-16) to fill Amps total into table
+For counter = 0 To 11
+    ActiveCell.Value = "=SUM($P$" & ActiveCell.Row() & ":$R$" & ActiveCell.Row() & ")"
+    ActiveCell.NumberFormat = "0"
+    ActiveCell.Offset(1, 0).Activate
+Next counter
+
+If acsrValues = True Then
+    With ActiveWorkbook
+        Set ws = .Sheets.Add(After:=Worksheets(Worksheets.Count))
+        ws.Name = "ACSR"
+    End With
+    ACSR_Base64
+End If
+
+' Calls ConFormat and ConAmpFormat
+' The former just does relative scaling, with blue gradient bars
+' because honestly it doesn't matter, but it looks nice
+' The latter [optionally] does a lookup based on your conductor and
+' applies actual scaling based on < 65%, 65 - 85%, 85 - 99%, and >= 100%
+
+If acsrValues = True Then
+    Range("P4:R15").Select
+    ConAmpFormat
+    Range("J4:L15").Select
+    ConFormat
+    Range("M4:M16").Select
+    ConFormat
+Else
+    Range("J4:L15").Select
+    ConFormat
+    Range("M4:M15").Select
+    ConFormat
+    Range("P4:R15").Select
+    ConFormat
+End If
+
+
+' This is done last as ConAmpFormat
+' would remove the bottom thick border otherwise
+Range("I2:M15").Select
+SetBorders
+Range("O2:S15").Select
+SetBorders
+
+If acsrValues = True Then
+    Range("J17:K19").Select
+    Range("P17:R17").BorderAround Weight:=xlMedium
+    Range("P17:R21").BorderAround Weight:=xlMedium
+Else
+    Range("J17:K18").Select
+End If
+SetBorders
+
+Range("J21:L" & UBound(abcVar) + 23).Select
+SetBorders
+
+End Sub
+
+Sub SetBorders()
+
+' Sets thin borders on all cells, medium border on outline
+With Selection
+    .Borders.LineStyle = xlContinuous
+    .BorderAround Weight:=xlMedium
+End With
+
+End Sub
+
+Sub ConFormat()
+
+' Sets blue gradient bars
+
+Selection.FormatConditions.AddDatabar
+Selection.FormatConditions(Selection.FormatConditions.Count).ShowValue = True
+Selection.FormatConditions(Selection.FormatConditions.Count).SetFirstPriority
+With Selection.FormatConditions(1)
+    .MinPoint.Modify newtype:=xlConditionValueAutomaticMin
+    .MaxPoint.Modify newtype:=xlConditionValueAutomaticMax
+End With
+With Selection.FormatConditions(1).BarColor
+    .Color = 13012579
+    .TintAndShade = 0
+End With
+Selection.FormatConditions(1).BarFillType = xlDataBarFillGradient
+Selection.FormatConditions(1).Direction = xlContext
+Selection.FormatConditions(1).NegativeBarFormat.ColorType = xlDataBarColor
+Selection.FormatConditions(1).BarBorder.Type = xlDataBarBorderSolid
+Selection.FormatConditions(1).NegativeBarFormat.BorderColorType = _
+    xlDataBarColor
+With Selection.FormatConditions(1).BarBorder.Color
+    .Color = 13012579
+    .TintAndShade = 0
+End With
+Selection.FormatConditions(1).AxisPosition = xlDataBarAxisAutomatic
+With Selection.FormatConditions(1).AxisColor
+    .Color = 0
+    .TintAndShade = 0
+End With
+With Selection.FormatConditions(1).NegativeBarFormat.Color
+    .Color = 255
+    .TintAndShade = 0
+End With
+With Selection.FormatConditions(1).NegativeBarFormat.BorderColor
+    .Color = 255
+    .TintAndShade = 0
+End With
+    
+End Sub
+
+
+
+Sub ConAmpFormat()
+Dim colorCodes
+Dim i As Variant
+
+colorCodes = Array("x < 65%", "65% <= x < 85%", "85% <= x < 100%", "x >= 100%")
+
+' These colors were taken from the default pastel Green-Red gradient scale
+
+' (1) Light yellow for 65% <= x < 85% of conductor ampacity
+With Range("$P$4").FormatConditions.Add(Type:=xlExpression, _
+    Formula1:="=AND((L5)>=0.65*INDEX(ACSR!$D$4:$D$71,MATCH($K$19,ACSR!$A$4:$A$71,0)),P4<0.85*INDEX(ACSR!$D$4:$D$71,MATCH($K$19,ACSR!$A$4:$A$71,0)))")
+            .Interior.Color = RGB(255, 235, 132)
+            .Font.Color = RGB(0, 0, 0)
+            .StopIfTrue = False
+End With
+
+' (2) Orange for 85% <= x < 100% of conductor ampacity
+With Range("$P$4").FormatConditions.Add(Type:=xlExpression, _
+    Formula1:="=AND((L5)>=0.85*INDEX(ACSR!$D$4:$D$71,MATCH($K$19,ACSR!$A$4:$A$71,0)),P4<INDEX(ACSR!$D$4:$D$71,MATCH($K$19,ACSR!$A$4:$A$71,0)))")
+            .Interior.Color = RGB(237, 125, 49)
+            .Font.Color = RGB(0, 0, 0)
+            .StopIfTrue = False
+End With
+
+' (3) Red for x >= 100% of conductor ampacity
+With Range("$P$4").FormatConditions.Add(Type:=xlExpression, _
+    Formula1:="=P4>=INDEX(ACSR!$D$4:$D$71,MATCH($K$19,ACSR!$A$4:$A$71,0))")
+            .Interior.Color = RGB(248, 105, 107)
+            .Font.Color = RGB(0, 0, 0)
+            .StopIfTrue = False
+End With
+
+' (4) Yellow is (1) * 3 for Total column
+With Range("$S$4").FormatConditions.Add(Type:=xlExpression, _
+    Formula1:="=AND((O5)>=0.65*3*INDEX(ACSR!$D$4:$D$71,MATCH($K$19,ACSR!$A$4:$A$71,0)),S4<0.85*3*INDEX(ACSR!$D$4:$D$71,MATCH($K$19,ACSR!$A$4:$A$71,0)))")
+            .Interior.Color = RGB(255, 235, 132)
+            .Font.Color = RGB(0, 0, 0)
+            .StopIfTrue = False
+End With
+
+' (5) Orange is (2) * 3 for Total column
+With Range("$S$4").FormatConditions.Add(Type:=xlExpression, _
+    Formula1:="=AND((O5)>=0.85*3*INDEX(ACSR!$D$4:$D$71,MATCH($K$19,ACSR!$A$4:$A$71,0)),S4<3*INDEX(ACSR!$D$4:$D$71,MATCH($K$19,ACSR!$A$4:$A$71,0)))")
+            .Interior.Color = RGB(237, 125, 49)
+            .Font.Color = RGB(0, 0, 0)
+            .StopIfTrue = False
+End With
+
+' (6) Red is (3) * 3 for Total column
+With Range("$S$4").FormatConditions.Add(Type:=xlExpression, _
+    Formula1:="=S4>=3*INDEX(ACSR!$D$4:$D$71,MATCH($K$19,ACSR!$A$4:$A$71,0))")
+            .Interior.Color = RGB(248, 105, 107)
+            .Font.Color = RGB(0, 0, 0)
+            .StopIfTrue = False
+End With
+
+' (7) Green for all other conditions (i.e. < 65%)
+With Range("$P$4").FormatConditions.Add(Type:=xlExpression, _
+    Formula1:="=TRUE")
+        .Interior.Color = RGB(123, 190, 99)
+        .Font.Color = RGB(0, 0, 0)
+        .StopIfTrue = False
+End With
+
+
+' Sets Yellow/Orange/Red/Green cell formatting to amps table
+' Excel applies these in the order written above, so it goes
+' from closest to limits --> furthest from limits (i.e. red --> green)
+
+Cells.FormatConditions(1).ModifyAppliesToRange Range("P4")
+Cells.FormatConditions(2).ModifyAppliesToRange Range("P4")
+Cells.FormatConditions(3).ModifyAppliesToRange Range("P4")
+
+' If you just apply the formatting to the entire range, it breaks
+' Instead, just apply it to the first cell, and then copy formatting to the range
+' Also note that the formula is a relative reference (L5) - while you may think
+' you should use an absolute reference, that doesn't allow this copy method to work
+' Also, if you're using a relative reference and pick a temp cell like A1, it auto-shifts
+' the reference when it copies so you wind up looking at W9 or something
+
+Range("P4").Copy
+Range("P4:R15").PasteSpecial Paste:=xlPasteFormats
+Cells.FormatConditions(4).ModifyAppliesToRange Range("S4")
+Cells.FormatConditions(5).ModifyAppliesToRange Range("S4")
+Cells.FormatConditions(6).ModifyAppliesToRange Range("S4")
+Range("S4").Copy
+Range("S4:S15").PasteSpecial Paste:=xlPasteFormats
+Cells.FormatConditions(7).ModifyAppliesToRange Range("S4")
+Range("S4").Copy
+Range("P4:S15").PasteSpecial Paste:=xlPasteFormats
+
+Range("P17").Value = "Pri. Cond."
+Range("Q17:R17").Merge
+Range("Q17:R17").HorizontalAlignment = xlRight
+
+' I'm really sorry about this formula
+' It's an INDEX/MATCH that checks for a char length of 1 on the ACSR Conductor (e.g. 2, 1/0, 336.4)
+' If it's 1, it includes a # as an identifier, lest people think it means 1/2/3/4 conductors
+' Doing it in non-R1C1 wasn't working, so here we are
+' Pray it doesn't break
+
+Range("Q17:R17").FormulaR1C1 = _
+        "=R[2]C[-6]&"" ("" & IF(LEN(INDEX(ACSR!R[-13]C[-15]:R[54]C[-15],MATCH(R[2]C[-6],ACSR!R[-13]C[-16]:R[54]C[-16],)))=1,""#""&INDEX(ACSR!R[-13]C[-15]:R[54]C[-15],MATCH(R[2]C[-6],ACSR!R[-13]C[-16]:R[54]C[-16],))&"")"",INDEX(ACSR!R[-13]C[-15]:R[54]C[-15],MATCH(R[2]C[-6],ACSR!R[-13]C[-16]:R[54]C[-16],))&"")"")"
+
+Range("P18").Interior.Color = RGB(123, 190, 99)
+Range("P19").Interior.Color = RGB(255, 235, 132)
+Range("P20").Interior.Color = RGB(237, 125, 49)
+Range("P21").Interior.Color = RGB(248, 105, 107)
+
+For i = 18 To 21
+    With Range("Q" & i & ":R" & i)
+        .Merge
+        ' colorCodes is 0 - 3
+        .Value = colorCodes(i - 18)
+        .HorizontalAlignment = xlRight
+    End With
+Next i
+
+' This just moves the cell selection somewhere non-annoying
+Range("A1").Select
+Application.CutCopyMode = False
+
+End Sub
+
+
+
