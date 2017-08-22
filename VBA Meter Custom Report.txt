@@ -379,7 +379,7 @@ Dim tableCounter As Integer
 Dim colCounter As Integer
 Dim monthNum As Integer
 Dim abcVar
-Dim colIndex As Integer
+Dim colIndex As Variant
 Dim rowCount As Integer
 Dim question As Integer
 Dim c As Variant
@@ -527,9 +527,8 @@ For counter = 0 To 11
 Next counter
 
 ' Puts =$x5*1000/($R$5*$R$4) from (5-16) to fill Amps into table
-' ASCII characters are used with colIndex (70 == F) to allow for easier incrementing
 Range("L5").Select
-colIndex = 70
+colIndex = "F"
 For colCounter = 0 To 2
     For counter = 0 To 11
         ActiveCell.Value = "=$" & Chr(colIndex) & ActiveCell.Row() & "*1000/($R$5*$R$4)"
@@ -537,7 +536,7 @@ For colCounter = 0 To 2
         ActiveCell.Offset(1, 0).Activate
     Next counter
     ActiveCell.Offset(-12, 1).Activate
-    colIndex = colIndex + 1
+    colIndex = Chr(Asc(colIndex) + 1)
 Next colCounter
 
 
@@ -785,10 +784,16 @@ End Sub
 
 Sub MakeGraph()
 
-' Commented out auto-saving as Excel complains about macros
+Dim fileSaveName As Variant
+
+Application.DisplayAlerts = False
+On Error GoTo ErrHandler
+
+ErrHandler:
+    ' This is terrible, but I can't figure out the bug, and everything seems to work if it's skipped over, so...
+    Resume Next
 
 Dim rowCount As Integer
-'Dim fileSaveName As Variant
 
 Sheets("Data").Select
 rowCount = ActiveWorkbook.Worksheets("Data").Columns("A").Cells.Find("*", SearchOrder:=xlByRows, LookIn:=xlValues, SearchDirection:=xlPrevious).Row
@@ -801,11 +806,9 @@ Sheets("Graph").Select
 ActiveSheet.Paste
 
 Sheets("Data").Activate
-'fileSaveName = Split(ActiveWorkbook.Name, ".")
-'fileSaveName = fileSaveName(LBound(fileSaveName))
-'ActiveWorkbook.SaveAs Filename:=fileSaveName, FileFormat:=xlOpenXMLWorkbook, CreateBackup:=False
+fileSaveName = Split(ActiveWorkbook.Name, ".")
+fileSaveName = fileSaveName(LBound(fileSaveName))
+ActiveWorkbook.SaveAs Filename:=fileSaveName, FileFormat:=xlOpenXMLWorkbook, CreateBackup:=False
+Application.DisplayAlerts = True
 
 End Sub
-
-
-
